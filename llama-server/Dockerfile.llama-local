@@ -1,0 +1,16 @@
+FROM ghcr.io/lzx147607/riscv64-ubuntu:22.04
+
+ENV LC_ALL=C.UTF-8 \
+    LANG=C.UTF-8
+
+WORKDIR /app
+
+COPY bin/llama-cli /app/bin/llama-cli
+COPY models/model.gguf /app/models/model.gguf
+COPY scripts/run.sh /app/scripts/run.sh
+
+RUN chmod +x /app/bin/llama-cli /app/scripts/run.sh
+
+ENTRYPOINT ["/app/scripts/run.sh"]
+CMD ["--task-size=small"]
+

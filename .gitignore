@@ -1,0 +1,38 @@
+# 二进制
+*.bin
+*.exe
+*.riscv
+*.tar
+*.tar.gz
+*.tar.xz
+
+# 模型权重
+models/
+*.gguf
+*.safetensors
+distilbert-base-uncased-finetuned/
+
+# 构建产物
+bin/
+build/
+npb-images/
+docker-build/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# 日志
+*.log
+output.txt
+dependency_check_report.json
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# 系统
+.DS_Store

@@ -1,0 +1,17 @@
+ARG BASE_IMAGE=ubuntu:22.04
+ARG ARCH_DIR=.
+
+FROM ${BASE_IMAGE}
+
+RUN apt-get update && apt-get install -y libgomp1 && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY ${ARCH_DIR}/bin/ /app/bin/
+COPY models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf /app/models/
+
+ENV LD_LIBRARY_PATH=/app/bin
+EXPOSE 8080
+
+ENTRYPOINT ["/app/bin/llama-server"]
+CMD ["-m", "/app/models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf", "--host", "0.0.0.0", "--port", "8080"]

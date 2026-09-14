@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: token-predictor
+  namespace: llama-scheduler
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: token-predictor
+  template:
+    metadata:
+      labels:
+        app: token-predictor
+    spec:
+      containers:
+        - name: predictor
+          image: ghcr.io/sage-liuzx/token-predictor:arm64
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: token-predictor
+  namespace: llama-scheduler
+spec:
+  selector:
+    app: token-predictor
+  ports:
+    - port: 80
+      targetPort: 8080

@@ -1,0 +1,40 @@
+# Dockerfile.local-arm
+FROM ubuntu-arm64:22.04
+
+# 设置环境变量
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=Asia/Shanghai
+
+WORKDIR /app
+
+# 安装 Python 3.9
+RUN apt-get update && apt-get install -y \
+    python3.9 \
+    python3-pip \
+    python3-dev \
+    && ln -sf /usr/bin/python3.9 /usr/bin/python \
+    && rm -rf /var/lib/apt/lists/*
+
+# 安装 PyTorch (ARM CPU 版本)
+RUN pip3 install --no-cache-dir \
+    torch \
+    torchvision \
+    torchaudio \
+    --index-url https://download.pytorch.org/whl/cpu
+
+# 安装其他依赖
+RUN pip3 install --no-cache-dir \
+    transformers \
+    safetensors \
+    flask \
+    gunicorn
+
+# 复制代码
+COPY token_predictor_infer.py .
+COPY predictor_server.py .
+COPY bucket_config.json .
+COPY distilbert-base-uncased-finetuned/ ./model/
+
+EXPOSE 8080
+
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "predictor_server:app"]

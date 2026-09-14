@@ -1,0 +1,3 @@
+FROM scratch
+COPY bin/kube-scheduler /usr/local/bin/kube-scheduler
+ENTRYPOINT ["kube-scheduler"]

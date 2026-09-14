@@ -1,0 +1,150 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: llm-benchmark
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: llm-benchmark-role
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: llm-benchmark-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: llm-benchmark-role
+subjects:
+  - kind: ServiceAccount
+    name: llm-benchmark
+    namespace: kube-system
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: llm-benchmark-daemon
+  namespace: kube-system
+spec:
+  selector:
+    matchLabels:
+      app: llm-benchmark
+  template:
+    metadata:
+      labels:
+        app: llm-benchmark
+    spec:
+      serviceAccountName: llm-benchmark
+      nodeSelector:
+        test-group: "true"
+      tolerations:
+        - operator: Exists
+          effect: NoSchedule
+      hostNetwork: true
+      restartPolicy: Always
+      containers:
+        - name: benchmark
+          image: alpine:latest
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              apk update && apk add --no-cache jq bc curl
+
+              history_file="/tmp/tps_history.json"
+              if [ ! -f "$history_file" ]; then
+                echo '{"prompt_tps": [], "gen_tps": []}' > "$history_file"
+              fi
+
+              while true; do
+                echo "Starting benchmark on $(date)"
+
+                prompts=(
+                  "Evaluate this sentence for spelling and grammar mistakes He finnished his meal and left the resturant"
+                  "Write a short story about a robot learning to paint"
+                  "Explain the concept of machine learning in simple terms"
+                  "What are the benefits of renewable energy?"
+                  "Describe a day in the life of a software engineer"
+                )
+
+                total_prompt_tps=0
+                total_gen_tps=0
+                count=0
+
+                for prompt in "${prompts[@]}"; do
+                  echo "Benchmarking prompt: ${prompt:0:50}..."
+
+                  response=$(curl -s -X POST http://localhost:8080/completion \
+                    -H "Content-Type: application/json" \
+                    -d "{\"prompt\": \"$prompt\", \"n_predict\": 256, \"stream\": false}")
+
+                  tokens_evaluated=$(echo $response | jq -r '.tokens_evaluated // 0')
+                  prompt_ms=$(echo $response | jq -r '.timings.prompt_ms // 0')
+                  tokens_predicted=$(echo $response | jq -r '.tokens_predicted // 0')
+                  predicted_ms=$(echo $response | jq -r '.timings.predicted_ms // 0')
+
+                  if [ "$tokens_evaluated" -gt 0 ] && [ "$prompt_ms" -gt 0 ]; then
+                    prompt_tps=$(echo "scale=2; $tokens_evaluated / ($prompt_ms / 1000)" | bc)
+                  else
+                    prompt_tps=0
+                  fi
+
+                  if [ "$tokens_predicted" -gt 0 ] && [ "$predicted_ms" -gt 0 ]; then
+                    gen_tps=$(echo "scale=2; $tokens_predicted / ($predicted_ms / 1000)" | bc)
+                  else
+                    gen_tps=0
+                  fi
+
+                  total_prompt_tps=$(echo "$total_prompt_tps + $prompt_tps" | bc)
+                  total_gen_tps=$(echo "$total_gen_tps + $gen_tps" | bc)
+                  count=$((count + 1))
+
+                  echo "  Prompt TPS: $prompt_tps, Gen TPS: $gen_tps"
+                done
+
+                if [ "$count" -gt 0 ]; then
+                  avg_prompt_tps=$(echo "scale=2; $total_prompt_tps / $count" | bc)
+                  avg_gen_tps=$(echo "scale=2; $total_gen_tps / $count" | bc)
+                else
+                  avg_prompt_tps=0.1
+                  avg_gen_tps=0.05
+                fi
+
+                history=$(cat "$history_file")
+                new_history=$(echo $history | jq ".prompt_tps += [$avg_prompt_tps] | .gen_tps += [$avg_gen_tps]")
+                new_history=$(echo $new_history | jq 'if .prompt_tps | length > 5 then .prompt_tps = .prompt_tps[-5:] else . end | if .gen_tps | length > 5 then .gen_tps = .gen_tps[-5:] else . end')
+                echo $new_history > "$history_file"
+
+                prompt_count=$(echo $new_history | jq '.prompt_tps | length')
+                gen_count=$(echo $new_history | jq '.gen_tps | length')
+                if [ "$prompt_count" -gt 0 ]; then
+                  moving_avg_prompt=$(echo $new_history | jq -r '.prompt_tps | add / length')
+                else
+                  moving_avg_prompt=$avg_prompt_tps
+                fi
+                if [ "$gen_count" -gt 0 ]; then
+                  moving_avg_gen=$(echo $new_history | jq -r '.gen_tps | add / length')
+                else
+                  moving_avg_gen=$avg_gen_tps
+                fi
+
+                kubectl annotate node $NODE_NAME node-capabilities.llama-prompt-tokens-per-second=$moving_avg_prompt --overwrite
+                kubectl annotate node $NODE_NAME node-capabilities.llama-generation-tokens-per-second=$moving_avg_gen --overwrite
+
+                echo "Updated moving average TPS: prompt=$moving_avg_prompt, gen=$moving_avg_gen on $NODE_NAME (from $prompt_count historical samples)"
+                sleep 3600
+              done
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          resources:
+            limits:
+              cpu: 500m
+              memory: 1Gi
