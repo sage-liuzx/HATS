@@ -4,7 +4,7 @@
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue)](https://www.python.org/)
 [![Kubernetes](https://img.shields.io/badge/Kubernetes-v1.28%2B-326CE5)](https://kubernetes.io/)
-
+[![llama.cpp](https://img.shields.io/badge/llama.cpp-LLM%20Inference-orange)](https://github.com/ggerganov/llama.cpp)
 
 ---
 
