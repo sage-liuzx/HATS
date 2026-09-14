@@ -216,7 +216,7 @@ kubectl delete -f deploy/llama-server-daemonset.yaml
 
 ## 8. 复现实验步骤
 
-1. 按论文表 4.1 准备 11 台异构节点；
+1. 按表准备异构节点；
 2. 在所有节点部署 llama.cpp 与 TinyLlama 1.1B；
 3. 部署 HATS 调度器，确认节点 Annotation 可读取动态 TPS；
 4. 依次运行 100、200、300、500、1000 任务规模实验；
