@@ -143,92 +143,84 @@ TimeScore = 100 \times e^{-\frac{T_i - T_{best}}{\beta}}, \quad \beta = 10
 
 ---
 
-## 快速开始
+# HATS 运行操作手册
 
-> 以下命令为示例，请根据仓库实际代码结构、镜像仓库和 K8s 配置进行调整。
+> 镜像构建与交叉编译见 [docs/build.md](docs/build.md)。
 
-### 1. 克隆仓库
+## 前置条件
 
-```bash
-git clone https://github.com/<your-username>/HATS.git
-cd HATS
-```
+- Kubernetes v1.28+
+- 集群已加入 x86 / ARM / RISC-V 异构节点
+- 已配置 ghcr.io 镜像拉取权限
+- 已安装 `kubectl`、`python3`
 
-### 2. 安装 Python 依赖
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-### 3. 准备 Kubernetes 集群
-
-确保各节点已加入集群，并部署 llama.cpp 推理服务：
+## 1. 部署 llama.cpp 推理服务
 
 ```bash
-kubectl apply -f deploy/llama-server.yaml
-kubectl get nodes -owide
+kubectl apply -f deploy/llama-server-daemonset.yaml
 ```
 
-### 4. 构建并部署自定义调度器
+## 2. 部署输出长度预测器
 
 ```bash
-docker build -t <registry>/llama-scheduler:latest -f scheduler/Dockerfile .
-docker push <registry>/llama-scheduler:latest
-kubectl apply -f deploy/scheduler.yaml
+kubectl apply -f deploy/token-predictor.yaml
 ```
 
-### 5. 启动动态 TPS 基准测试
+## 3. 部署自定义调度器
 
 ```bash
-python benchmark/run_tps_benchmark.py --interval 1200
+kubectl apply -f deploy/llama-scheduler.yaml
 ```
 
-### 6. 提交模拟推理任务
+## 4. 标注节点能力
 
 ```bash
-python scripts/submit_tasks.py \
-  --num-tasks 300 \
-  --max-running 32 \
-  --model TinyLlama-1.1B
+# 示例：ARM 节点
+kubectl annotate node arm207 \
+  node-capabilities.llama-prompt-tokens-per-second=10.5 \
+  node-capabilities.llama-generation-tokens-per-second=4.8 \
+  --overwrite
+
+# 示例：RISC-V 节点
+kubectl annotate node riscv105 \
+  node-capabilities.llama-prompt-tokens-per-second=0.4 \
+  node-capabilities.llama-generation-tokens-per-second=0.3 \
+  --overwrite
 ```
 
-### 7. 收集实验结果
+> 节点名称和数值请根据实际集群调整。
+
+## 5. 运行 benchmark
 
 ```bash
-python scripts/collect_results.py --output experiments/results
+# 批量提交推理任务
+python scripts/submit_batch.py --tasks 100
+
+# 调度器对比实验（HATS vs Default / SJF / Least-load）
+bash scripts/compare_scheduler.sh
 ```
 
----
+## 6. 查看结果
 
-## 目录结构建议
-
-```text
-HATS/
-├── scheduler/          # Kubernetes 自定义调度器插件与核心逻辑
-├── predictor/          # DistilBERT 输出长度预测器与在线反馈
-├── benchmark/          # 动态 TPS 微基准测试
-├── deploy/             # Kubernetes YAML 部署文件
-├── scripts/            # 任务提交、结果收集、实验脚本
-├── experiments/        # 实验结果与图表
-├── docs/               # 论文、PPT、架构图、说明文档
-│   ├── paper.pdf
-│   ├── slides.pptx
-│   └── assets/
-├── requirements.txt
-├── LICENSE
-└── README.md
+```bash
+kubectl get pods -A -o wide
+kubectl logs -l app=llama-scheduler -n llama-scheduler
 ```
 
----
+## 7. 清理
 
-## 复现实验建议
+```bash
+kubectl delete -f deploy/llama-scheduler.yaml
+kubectl delete -f deploy/token-predictor.yaml
+kubectl delete -f deploy/llama-server-daemonset.yaml
+```
 
-1. 按上表准备 11 台异构节点，或按实际条件调整集群规模；
+## 8. 复现实验步骤
+
+1. 按论文表 4.1 准备 11 台异构节点；
 2. 在所有节点部署 llama.cpp 与 TinyLlama 1.1B；
-3. 部署 HATS 调度器，并确认节点 Annotation 中能读取到动态 TPS；
+3. 部署 HATS 调度器，确认节点 Annotation 可读取动态 TPS；
 4. 依次运行 100、200、300、500、1000 任务规模实验；
 5. 对比 Default、SJF、Least-load 三种基线；
 6. 分别关闭动态 TPS 与输出长度预测器，完成消融实验；
-7. 在同构 x86、ARM、RISC-V 集群中重复实验，分析异构程度与调度收益的关系。
+7. 在同构 x86、ARM、RISC-V 集群中重复实验。
