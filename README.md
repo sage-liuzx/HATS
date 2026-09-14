@@ -1,5 +1,4 @@
-# HATS
-# HATS: 面向大模型推理的异构设备协同调度研究
+# HATS: 面向大模型推理的异构边缘设备协同调度研究
 
 > Heterogeneity-Aware Task Scheduling for LLM Inference on Heterogeneous Edge Clusters
 
